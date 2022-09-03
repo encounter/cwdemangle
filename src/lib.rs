@@ -220,10 +220,11 @@ pub fn demangle(mut str: &str) -> Option<String> {
         str = &str[2..];
     }
     {
-        let (fn_name_out, rest) = str.split_once("__")?;
+        let idx = str.find("__")?;
+        let (fn_name_out, rest) = str.split_at(idx);
         let (_, qualified) = demange_template_args(fn_name_out)?;
         fn_name = qualified;
-        str = rest;
+        str = &rest[2..];
     }
     let (class_name, mut qualified, rest) = demangle_qualified_class(str)?;
     str = rest;
