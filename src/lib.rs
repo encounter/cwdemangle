@@ -253,10 +253,17 @@ pub fn demangle(mut str: &str) -> Option<String> {
         str = &str[2..];
     }
     {
-        let idx = str.rfind("__")?;
-        let (fn_name_out, rest) = str.split_at(idx);
+        let idx = str.find("__")?;
+        let (fn_name_out, mut rest) = str.split_at(idx);
         if special {
-            fn_name = fn_name_out.to_string();
+            if fn_name_out == "init" {
+                // Special case for double __
+                let rest_idx = rest[2..].find("__")?;
+                fn_name = str[..rest_idx + 6].to_string();
+                rest = &rest[rest_idx + 2..];
+            } else {
+                fn_name = fn_name_out.to_string();
+            }
         } else {
             let (name, args) = demangle_template_args(fn_name_out)?;
             fn_name = format!("{}{}", name, args);
@@ -506,6 +513,10 @@ mod tests {
         assert_eq!(
             demangle("__init__mNull__Q24rstl66basic_string<c,Q24rstl14char_traits<c>,Q24rstl17rmemory_allocator>"),
             Some("rstl::basic_string<char, rstl::char_traits<char>, rstl::rmemory_allocator>::__init__mNull".to_string())
+        );
+        assert_eq!(
+            demangle("__dt__26__partial_array_destructorFv"),
+            Some("__partial_array_destructor::~__partial_array_destructor(void)".to_string())
         );
     }
 }
