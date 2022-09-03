@@ -1,6 +1,6 @@
 # cwdemangle [![Build Status]][actions]
 
-[Build Status]: https://github.com/encounter/cwdemangle/workflows/build/badge.svg
+[Build Status]: https://github.com/encounter/cwdemangle/actions/workflows/build.yaml/badge.svg
 [actions]: https://github.com/encounter/cwdemangle/actions
 
 A CodeWarrior C++ symbol demangler.
