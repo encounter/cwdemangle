@@ -26,51 +26,50 @@ fn parse_digits(str: &str) -> Option<(usize, &str)> {
     }
 }
 
-fn demange_template_args(mut str: &str) -> Option<(&str, String)> {
-    let qualified = if let Some(start_idx) = str.find('<') {
+fn demangle_template_args(mut str: &str) -> Option<(&str, String)> {
+    let tmpl_args = if let Some(start_idx) = str.find('<') {
         let end_idx = str.rfind('>')?;
         let mut args = &str[start_idx + 1..end_idx];
         str = &str[..start_idx];
-        let mut qualified = str.to_string();
-        qualified += "<";
+        let mut tmpl_args = "<".to_string();
         while !args.is_empty() {
             let (arg, arg_post, rest) = demangle_arg(args)?;
-            qualified += arg.as_str();
-            qualified += arg_post.as_str();
+            tmpl_args += arg.as_str();
+            tmpl_args += arg_post.as_str();
             if rest.is_empty() {
                 break;
             } else {
-                qualified += ", ";
+                tmpl_args += ", ";
             }
             args = &rest[1..];
         }
-        qualified += ">";
-        qualified
+        tmpl_args += ">";
+        tmpl_args
     } else {
-        str.to_string()
+        String::new()
     };
-    Some((str, qualified))
+    Some((str, tmpl_args))
 }
 
-fn demangle_class(str: &str) -> Option<(String, String, &str)> {
+fn demangle_name(str: &str) -> Option<(String, String, &str)> {
     let (size, rest) = parse_digits(str)?;
     // hack for template argument constants
     if rest.is_empty() || rest.starts_with(',') {
         let out = format!("{}", size);
         return Some((out.clone(), out, rest));
     }
-    let (class_name, qualified) = demange_template_args(&rest[..size])?;
-    Some((class_name.to_string(), qualified, &rest[size..]))
+    let (name, args) = demangle_template_args(&rest[..size])?;
+    Some((name.to_string(), format!("{}{}", name, args), &rest[size..]))
 }
 
-fn demangle_qualified_class(mut str: &str) -> Option<(String, String, &str)> {
+fn demangle_qualified_name(mut str: &str) -> Option<(String, String, &str)> {
     if str.starts_with('Q') {
         let count = usize::from_str(&str[1..2]).ok()?;
         str = &str[2..];
         let mut last_class = String::new();
         let mut qualified = String::new();
         for i in 0..count {
-            let (class_name, full, rest) = demangle_class(str)?;
+            let (class_name, full, rest) = demangle_name(str)?;
             qualified += full.as_str();
             last_class = class_name;
             str = rest;
@@ -80,7 +79,7 @@ fn demangle_qualified_class(mut str: &str) -> Option<(String, String, &str)> {
         }
         Some((last_class, qualified, str))
     } else {
-        demangle_class(str)
+        demangle_name(str)
     }
 }
 
@@ -90,7 +89,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
     result += pre.as_str();
     str = rest;
     if str.starts_with('Q') || str.starts_with(|c: char| c.is_ascii_digit()) {
-        let (_, qualified, rest) = demangle_qualified_class(str)?;
+        let (_, qualified, rest) = demangle_qualified_name(str)?;
         result += qualified.as_str();
         result += post.as_str();
         return Some((result, String::new(), rest));
@@ -99,7 +98,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
     let mut const_member = false;
     if str.starts_with('M') {
         is_member = true;
-        let (_, member, rest) = demangle_qualified_class(&str[1..])?;
+        let (_, member, rest) = demangle_qualified_name(&str[1..])?;
         pre = format!("{}::*{}", member, pre);
         if !rest.starts_with('F') {
             return None;
@@ -140,7 +139,9 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
             return None;
         }
         let (arg_pre, arg_post, rest) = demangle_arg(&rest[1..])?;
-        if !post.is_empty() { post = format!("({})", post); }
+        if !post.is_empty() {
+            post = format!("({})", post);
+        }
         result = format!("{}{}{}", pre, arg_pre, post);
         let ret_post = format!("[{}]{}", count, arg_post);
         return Some((result, ret_post, rest));
@@ -185,8 +186,10 @@ fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
         let (arg_pre, arg_post, _) = demangle_arg(rest)?;
         return Some(format!("operator {}{}", arg_pre, arg_post));
     }
-    Some(
-        match str {
+    let (op, args) = demangle_template_args(str)?;
+    Some(format!(
+        "{}{}",
+        match op {
             "dt" => return Some(format!("~{}", class_name)),
             "ct" => class_name,
             "nw" => "operator new",
@@ -232,9 +235,9 @@ fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
             "cl" => "operator()",
             "vc" => "operator[]",
             _ => return None,
-        }
-            .to_string(),
-    )
+        },
+        args
+    ))
 }
 
 pub fn demangle(mut str: &str) -> Option<String> {
@@ -254,16 +257,16 @@ pub fn demangle(mut str: &str) -> Option<String> {
         if special {
             fn_name = fn_name_out.to_string();
         } else {
-            let (_, qualified) = demange_template_args(fn_name_out)?;
-            fn_name = qualified;
+            let (name, args) = demangle_template_args(fn_name_out)?;
+            fn_name = format!("{}{}", name, args);
         }
         str = &rest[2..];
     }
     let mut class_name = String::new();
     if !str.starts_with('F') {
-        let (cls, qualified_class, rest) = demangle_qualified_class(str)?;
-        class_name = cls;
-        qualified = qualified_class;
+        let (name, qualified_name, rest) = demangle_qualified_name(str)?;
+        class_name = name;
+        qualified = qualified_name;
         str = rest;
     }
     if special {
@@ -306,29 +309,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_demangle_class() {
+    fn test_demangle_template_args() {
         assert_eq!(
-            demangle_class("24single_ptr<10CModelData>"),
+            demangle_template_args("single_ptr<10CModelData>"),
+            Some(("single_ptr", "<CModelData>".to_string()))
+        );
+        assert_eq!(
+            demangle_template_args(
+                "basic_string<w,Q24rstl14char_traits<w>,Q24rstl17rmemory_allocator>"
+            ),
             Some((
-                "single_ptr".to_string(),
-                "single_ptr<CModelData>".to_string(),
-                ""
+                "basic_string",
+                "<wchar_t, rstl::char_traits<wchar_t>, rstl::rmemory_allocator>".to_string()
             ))
-        )
+        );
     }
 
     #[test]
-    fn test_demangle_qualified_class() {
+    fn test_demangle_name() {
         assert_eq!(
-            demangle_qualified_class("6CActor"),
+            demangle_name("24single_ptr<10CModelData>"),
+            Some(("single_ptr".to_string(), "single_ptr<CModelData>".to_string(), ""))
+        );
+        assert_eq!(
+            demangle_name("66basic_string<w,Q24rstl14char_traits<w>,Q24rstl17rmemory_allocator>"),
+            Some((
+                "basic_string".to_string(),
+                "basic_string<wchar_t, rstl::char_traits<wchar_t>, rstl::rmemory_allocator>"
+                    .to_string(),
+                ""
+            ))
+        );
+    }
+
+    #[test]
+    fn test_demangle_qualified_name() {
+        assert_eq!(
+            demangle_qualified_name("6CActor"),
             Some(("CActor".to_string(), "CActor".to_string(), ""))
         );
         assert_eq!(
-            demangle_qualified_class("Q29CVector3f4EDim"),
+            demangle_qualified_name("Q29CVector3f4EDim"),
             Some(("EDim".to_string(), "CVector3f::EDim".to_string(), ""))
         );
         assert_eq!(
-            demangle_qualified_class(
+            demangle_qualified_name(
                 "Q24rstl66basic_string<w,Q24rstl14char_traits<w>,Q24rstl17rmemory_allocator>"
             ),
             Some((
@@ -371,10 +396,7 @@ mod tests {
     #[test]
     fn test_demangle() {
         assert_eq!(demangle("cfunction"), None);
-        assert_eq!(
-            demangle("__dt__6CActorFv"),
-            Some("CActor::~CActor(void)".to_string())
-        );
+        assert_eq!(demangle("__dt__6CActorFv"), Some("CActor::~CActor(void)".to_string()));
         assert_eq!(
             demangle("GetSfxHandle__6CActorCFv"),
             Some("CActor::GetSfxHandle(void) const".to_string())
@@ -433,7 +455,10 @@ mod tests {
         );
         assert_eq!(
             demangle("__opb__33TFunctor2<CP15CGuiSliderGroup,Cf>CFv"),
-            Some("TFunctor2<const CGuiSliderGroup*, const float>::operator bool(void) const".to_string())
+            Some(
+                "TFunctor2<const CGuiSliderGroup*, const float>::operator bool(void) const"
+                    .to_string()
+            )
         );
         assert_eq!(
             demangle("__opRC25TToken<15CCharLayoutInfo>__31TLockedToken<15CCharLayoutInfo>CFv"),
@@ -453,7 +478,9 @@ mod tests {
         );
         assert_eq!(
             demangle("CalculateFluidTextureOffset__14CFluidUVMotionCFfPA2_f"),
-            Some("CFluidUVMotion::CalculateFluidTextureOffset(float, float(*)[2]) const".to_string())
+            Some(
+                "CFluidUVMotion::CalculateFluidTextureOffset(float, float(*)[2]) const".to_string()
+            )
         );
         assert_eq!(
             demangle("RenderNormals__FRA43_A43_CQ220CFluidPlaneCPURender13SHFieldSampleRA22_A22_CUcRCQ220CFluidPlaneCPURender10SPatchInfo"),
@@ -462,6 +489,10 @@ mod tests {
         assert_eq!(
             demangle("Matrix__FfPA2_A3_f"),
             Some("Matrix(float, float(*)[2][3])".to_string())
+        );
+        assert_eq!(
+            demangle("__ct<12CStringTable>__31CObjOwnerDerivedFromIObjUntypedFRCQ24rstl24auto_ptr<12CStringTable>"),
+            Some("CObjOwnerDerivedFromIObjUntyped::CObjOwnerDerivedFromIObjUntyped<CStringTable>(const rstl::auto_ptr<CStringTable>&)".to_string())
         );
     }
 }
