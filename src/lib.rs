@@ -142,7 +142,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
         let (arg_pre, arg_post, rest) = demangle_arg(&rest[1..])?;
         if !post.is_empty() { post = format!("({})", post); }
         result = format!("{}{}{}", pre, arg_pre, post);
-        let ret_post = format!("{}[{}]", arg_post, count);
+        let ret_post = format!("[{}]{}", count, arg_post);
         return Some((result, ret_post, rest));
     }
     result.push_str(match str.chars().next().unwrap() {
@@ -458,6 +458,10 @@ mod tests {
         assert_eq!(
             demangle("RenderNormals__FRA43_A43_CQ220CFluidPlaneCPURender13SHFieldSampleRA22_A22_CUcRCQ220CFluidPlaneCPURender10SPatchInfo"),
             Some("RenderNormals(const CFluidPlaneCPURender::SHFieldSample(&)[43][43], const unsigned char(&)[22][22], const CFluidPlaneCPURender::SPatchInfo&)".to_string())
+        );
+        assert_eq!(
+            demangle("Matrix__FfPA2_A3_f"),
+            Some("Matrix(float, float(*)[2][3])".to_string())
         );
     }
 }
