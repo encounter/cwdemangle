@@ -54,7 +54,7 @@ fn demange_template_args(mut str: &str) -> Option<(&str, String)> {
 fn demangle_class(str: &str) -> Option<(String, String, &str)> {
     let (size, rest) = parse_digits(str)?;
     // hack for template argument constants
-    if rest.is_empty() || rest.starts_with(",") {
+    if rest.is_empty() || rest.starts_with(',') {
         let out = format!("{}", size);
         return Some((out.clone(), out, rest));
     }
@@ -79,7 +79,7 @@ fn demangle_qualified_class(mut str: &str) -> Option<(String, String, &str)> {
         }
         Some((last_class, qualified, str))
     } else {
-        return demangle_class(str);
+        demangle_class(str)
     }
 }
 
@@ -99,7 +99,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
         is_member = true;
         let (_, member, rest) = demangle_qualified_class(&str[1..])?;
         post = format!("{}::*{}", member, post);
-        if !rest.starts_with("F") {
+        if !rest.starts_with('F') {
             return None;
         }
         str = rest;
@@ -114,7 +114,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
             str = &str[5..];
         }
         let (args, rest) = demangle_function_args(str)?;
-        if !rest.starts_with("_") {
+        if !rest.starts_with('_') {
             return None;
         }
         let (ret, rest) = demangle_arg(&rest[1..])?;
@@ -151,7 +151,7 @@ fn demangle_function_args(mut str: &str) -> Option<(String, &str)> {
         let (arg, rest) = demangle_arg(str)?;
         result += arg.as_str();
         str = rest;
-        if str.starts_with("_") || str.starts_with(",") {
+        if str.starts_with('_') || str.starts_with(',') {
             break;
         }
     }
@@ -231,17 +231,17 @@ pub fn demangle(mut str: &str) -> Option<String> {
     if special {
         fn_name = demangle_special_function(fn_name.as_str(), class_name.as_str())?;
     }
-    if str.starts_with("C") {
+    if str.starts_with('C') {
         str = &str[1..];
         cnst = true;
     }
-    if str.starts_with("F") {
+    if str.starts_with('F') {
         str = &str[1..];
         let (args, rest) = demangle_function_args(str)?;
         fn_name = format!("{}({})", fn_name, args);
         str = rest;
     }
-    if str.starts_with("_") {
+    if str.starts_with('_') {
         str = &str[1..];
         let (ret, rest) = demangle_arg(str)?;
         qualified = format!("{} {}", ret, qualified);
