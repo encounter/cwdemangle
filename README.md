@@ -18,12 +18,10 @@ Library:
 ```rust
 use cwdemangle::demangle;
 
-let symbol = "BuildLight__9CGuiLightCFv";
-if let Some(result) = demangle(symbol) {
+if let Some(result) = demangle("BuildLight__9CGuiLightCFv") {
     println!("{}", result);
-    Ok(())
 } else {
-    Err("Couldn't demangle symbol (not a C++ symbol?)")
+    eprintln!("Couldn't demangle symbol (not a C++ symbol?)");
 }
 ```
 
