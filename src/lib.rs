@@ -18,7 +18,7 @@ fn parse_qualifiers(mut str: &str) -> (String, String, &str) {
 }
 
 fn parse_digits(str: &str) -> Option<(usize, &str)> {
-    if let Some(idx) = str.find(|c: char| !c.is_digit(10)) {
+    if let Some(idx) = str.find(|c: char| !c.is_ascii_digit()) {
         Some((usize::from_str(&str[..idx]).ok()?, &str[idx..]))
     } else {
         // all digits!
@@ -88,7 +88,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
     let (pre, mut post, rest) = parse_qualifiers(str);
     result += pre.as_str();
     str = rest;
-    if str.starts_with('Q') || str.starts_with(|c: char| c.is_digit(10)) {
+    if str.starts_with('Q') || str.starts_with(|c: char| c.is_ascii_digit()) {
         let (_, qualified, rest) = demangle_qualified_class(str)?;
         result += qualified.as_str();
         result += post.as_str();
