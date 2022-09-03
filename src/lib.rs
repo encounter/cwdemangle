@@ -134,8 +134,16 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
         let res_post = format!(")({}){}{}", args, const_str, ret_post);
         return Some((res_pre, res_post, rest));
     }
-    if str.starts_with('A') {
-        todo!("array")
+    if let Some(rest) = str.strip_prefix('A') {
+        let (count, rest) = parse_digits(rest)?;
+        if !rest.starts_with('_') {
+            return None;
+        }
+        let (arg_pre, arg_post, rest) = demangle_arg(&rest[1..])?;
+        if !post.is_empty() { post = format!("({})", post); }
+        result = format!("{}{}{}", pre, arg_pre, post);
+        let ret_post = format!("{}[{}]", arg_post, count);
+        return Some((result, ret_post, rest));
     }
     result.push_str(match str.chars().next().unwrap() {
         'i' => "int",
@@ -173,9 +181,13 @@ fn demangle_function_args(mut str: &str) -> Option<(String, &str)> {
 }
 
 fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
+    if let Some(rest) = str.strip_prefix("op") {
+        let (arg_pre, arg_post, _) = demangle_arg(rest)?;
+        return Some(format!("operator {}{}", arg_pre, arg_post));
+    }
     Some(
         match str {
-            "dt" => return Some("~".to_string() + class_name),
+            "dt" => return Some(format!("~{}", class_name)),
             "ct" => class_name,
             "nw" => "operator new",
             "nwa" => "operator new[]",
@@ -239,17 +251,23 @@ pub fn demangle(mut str: &str) -> Option<String> {
     {
         let idx = str.find("__")?;
         let (fn_name_out, rest) = str.split_at(idx);
-        let (_, qualified) = demange_template_args(fn_name_out)?;
-        fn_name = qualified;
+        if special {
+            fn_name = fn_name_out.to_string();
+        } else {
+            let (_, qualified) = demange_template_args(fn_name_out)?;
+            fn_name = qualified;
+        }
         str = &rest[2..];
     }
+    let mut class_name = String::new();
     if !str.starts_with('F') {
-        let (class_name, qualified_class, rest) = demangle_qualified_class(str)?;
+        let (cls, qualified_class, rest) = demangle_qualified_class(str)?;
+        class_name = cls;
         qualified = qualified_class;
         str = rest;
-        if special {
-            fn_name = demangle_special_function(fn_name.as_str(), class_name.as_str())?;
-        }
+    }
+    if special {
+        fn_name = demangle_special_function(fn_name.as_str(), class_name.as_str())?;
     }
     if str.starts_with('C') {
         str = &str[1..];
@@ -404,6 +422,42 @@ mod tests {
         assert_eq!(
             demangle("SomeFn__Q29Namespace5ClassCFRCMQ29Namespace5ClassFPCvPCvMQ29Namespace5ClassFPCvPCvPCvPv_v_RCMQ29Namespace5ClassFPCvPCvPCvPv_v"),
             Some("Namespace::Class::SomeFn(void (Namespace::Class::*const & (Namespace::Class::*const &)(void (Namespace::Class::*)(const void*, void*) const) const)(const void*, void*) const) const".to_string())
+        );
+        assert_eq!(
+            demangle("__pl__FRC9CRelAngleRC9CRelAngle"),
+            Some("operator+(const CRelAngle&, const CRelAngle&)".to_string())
+        );
+        assert_eq!(
+            demangle("destroy<PUi>__4rstlFPUiPUi"),
+            Some("rstl::destroy<unsigned int*>(unsigned int*, unsigned int*)".to_string())
+        );
+        assert_eq!(
+            demangle("__opb__33TFunctor2<CP15CGuiSliderGroup,Cf>CFv"),
+            Some("TFunctor2<const CGuiSliderGroup*, const float>::operator bool(void) const".to_string())
+        );
+        assert_eq!(
+            demangle("__opRC25TToken<15CCharLayoutInfo>__31TLockedToken<15CCharLayoutInfo>CFv"),
+            Some("TLockedToken<CCharLayoutInfo>::operator const TToken<CCharLayoutInfo>&(void) const".to_string())
+        );
+        assert_eq!(
+            demangle("uninitialized_copy<Q24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>,PQ224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo>__4rstlFQ24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>Q24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>PQ224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo"),
+            Some("rstl::uninitialized_copy<rstl::pointer_iterator<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::vector<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::rmemory_allocator>, rstl::rmemory_allocator>, CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo*>(rstl::pointer_iterator<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::vector<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::rmemory_allocator>, rstl::rmemory_allocator>, rstl::pointer_iterator<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::vector<CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo, rstl::rmemory_allocator>, rstl::rmemory_allocator>, CSpawnSystemKeyframeData::CSpawnSystemKeyframeInfo*)".to_string())
+        );
+        assert_eq!(
+            demangle("__rf__Q34rstl120list<Q24rstl78pair<i,PFRC10SObjectTagR12CInputStreamRC15CVParamTransfer_C16CFactoryFnReturn>,Q24rstl17rmemory_allocator>14const_iteratorCFv"),
+            Some("rstl::list<rstl::pair<int, const CFactoryFnReturn (*)(const SObjectTag&, CInputStream&, const CVParamTransfer&)>, rstl::rmemory_allocator>::const_iterator::operator->(void) const".to_string())
+        );
+        assert_eq!(
+            demangle("ApplyRipples__FRC14CRippleManagerRA43_A43_Q220CFluidPlaneCPURender13SHFieldSampleRA22_A22_UcRA256_CfRQ220CFluidPlaneCPURender10SPatchInfo"),
+            Some("ApplyRipples(const CRippleManager&, CFluidPlaneCPURender::SHFieldSample(&)[43][43], unsigned char(&)[22][22], const float(&)[256], CFluidPlaneCPURender::SPatchInfo&)".to_string())
+        );
+        assert_eq!(
+            demangle("CalculateFluidTextureOffset__14CFluidUVMotionCFfPA2_f"),
+            Some("CFluidUVMotion::CalculateFluidTextureOffset(float, float(*)[2]) const".to_string())
+        );
+        assert_eq!(
+            demangle("RenderNormals__FRA43_A43_CQ220CFluidPlaneCPURender13SHFieldSampleRA22_A22_CUcRCQ220CFluidPlaneCPURender10SPatchInfo"),
+            Some("RenderNormals(const CFluidPlaneCPURender::SHFieldSample(&)[43][43], const unsigned char(&)[22][22], const CFluidPlaneCPURender::SPatchInfo&)".to_string())
         );
     }
 }
