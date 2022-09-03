@@ -190,7 +190,7 @@ fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
     Some(format!(
         "{}{}",
         match op {
-            "dt" => return Some(format!("~{}", class_name)),
+            "dt" => return Some(format!("~{}{}", class_name, args)),
             "ct" => class_name,
             "nw" => "operator new",
             "nwa" => "operator new[]",
@@ -234,7 +234,8 @@ fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
             "rf" => "operator->",
             "cl" => "operator()",
             "vc" => "operator[]",
-            _ => return None,
+            "vt" => "__vtable",
+            _ => return Some(format!("__{}{}", op, args)),
         },
         args
     ))
@@ -252,7 +253,7 @@ pub fn demangle(mut str: &str) -> Option<String> {
         str = &str[2..];
     }
     {
-        let idx = str.find("__")?;
+        let idx = str.rfind("__")?;
         let (fn_name_out, rest) = str.split_at(idx);
         if special {
             fn_name = fn_name_out.to_string();
@@ -493,6 +494,18 @@ mod tests {
         assert_eq!(
             demangle("__ct<12CStringTable>__31CObjOwnerDerivedFromIObjUntypedFRCQ24rstl24auto_ptr<12CStringTable>"),
             Some("CObjOwnerDerivedFromIObjUntyped::CObjOwnerDerivedFromIObjUntyped<CStringTable>(const rstl::auto_ptr<CStringTable>&)".to_string())
+        );
+        assert_eq!(
+            demangle("__vt__40TObjOwnerDerivedFromIObj<12CStringTable>"),
+            Some("TObjOwnerDerivedFromIObj<CStringTable>::__vtable".to_string())
+        );
+        assert_eq!(
+            demangle("__RTTI__40TObjOwnerDerivedFromIObj<12CStringTable>"),
+            Some("TObjOwnerDerivedFromIObj<CStringTable>::__RTTI".to_string())
+        );
+        assert_eq!(
+            demangle("__init__mNull__Q24rstl66basic_string<c,Q24rstl14char_traits<c>,Q24rstl17rmemory_allocator>"),
+            Some("rstl::basic_string<char, rstl::char_traits<char>, rstl::rmemory_allocator>::__init__mNull".to_string())
         );
     }
 }
