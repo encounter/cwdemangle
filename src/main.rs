@@ -1,6 +1,6 @@
 use argh::FromArgs;
 
-mod lib;
+use cwdemangle::demangle;
 
 #[derive(FromArgs)]
 /// CodeWarrior C++ demangler
@@ -12,7 +12,7 @@ struct Args {
 
 fn main() -> Result<(), &'static str> {
     let args: Args = argh::from_env();
-    return if let Some(symbol) = lib::demangle(args.symbol.as_str()) {
+    return if let Some(symbol) = demangle(args.symbol.as_str()) {
         println!("{}", symbol);
         Ok(())
     } else {

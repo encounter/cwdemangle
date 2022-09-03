@@ -9,6 +9,7 @@ jobs:
     strategy:
       matrix:
         toolchain: [ stable, 1.51.0, nightly ]
+      fail-fast: false
     env:
       RUSTFLAGS: -D warnings
     steps:
