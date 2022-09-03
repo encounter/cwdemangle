@@ -34,8 +34,9 @@ fn demange_template_args(mut str: &str) -> Option<(&str, String)> {
         let mut qualified = str.to_string();
         qualified += "<";
         while !args.is_empty() {
-            let (arg, rest) = demangle_arg(args)?;
+            let (arg, arg_post, rest) = demangle_arg(args)?;
             qualified += arg.as_str();
+            qualified += arg_post.as_str();
             if rest.is_empty() {
                 break;
             } else {
@@ -83,22 +84,23 @@ fn demangle_qualified_class(mut str: &str) -> Option<(String, String, &str)> {
     }
 }
 
-fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
+fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
     let mut result = String::new();
-    let (pre, mut post, rest) = parse_qualifiers(str);
+    let (mut pre, mut post, rest) = parse_qualifiers(str);
     result += pre.as_str();
     str = rest;
     if str.starts_with('Q') || str.starts_with(|c: char| c.is_ascii_digit()) {
         let (_, qualified, rest) = demangle_qualified_class(str)?;
         result += qualified.as_str();
         result += post.as_str();
-        return Some((result, rest));
+        return Some((result, String::new(), rest));
     }
     let mut is_member = false;
+    let mut const_member = false;
     if str.starts_with('M') {
         is_member = true;
         let (_, member, rest) = demangle_qualified_class(&str[1..])?;
-        post = format!("{}::*{}", member, post);
+        pre = format!("{}::*{}", member, pre);
         if !rest.starts_with('F') {
             return None;
         }
@@ -107,19 +109,30 @@ fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
     if is_member || str.starts_with('F') {
         str = &str[1..];
         if is_member {
-            // Member functions always(?) include "const void*, void*"
-            if !str.starts_with("PCvPv") {
+            // "const void*, const void*" or "const void*, void*"
+            if str.starts_with("PCvPCv") {
+                const_member = true;
+                str = &str[6..];
+            } else if str.starts_with("PCvPv") {
+                str = &str[5..];
+            } else {
                 return None;
             }
-            str = &str[5..];
+        } else if post.ends_with('*') {
+            post = post[..post.len() - 1].to_string();
+            pre = format!("*{}", pre);
+        } else {
+            return None;
         }
         let (args, rest) = demangle_function_args(str)?;
         if !rest.starts_with('_') {
             return None;
         }
-        let (ret, rest) = demangle_arg(&rest[1..])?;
-        result += format!("{} ({})({})", ret, post, args).as_str();
-        return Some((result, rest));
+        let (ret_pre, ret_post, rest) = demangle_arg(&rest[1..])?;
+        let const_str = if const_member { " const" } else { "" };
+        let res_pre = format!("{} ({}{}", ret_pre, pre, post);
+        let res_post = format!(")({}){}{}", args, const_str, ret_post);
+        return Some((res_pre, res_post, rest));
     }
     if str.starts_with('A') {
         todo!("array")
@@ -139,7 +152,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, &str)> {
         _ => return None,
     });
     result += post.as_str();
-    Some((result, &str[1..]))
+    Some((result, String::new(), &str[1..]))
 }
 
 fn demangle_function_args(mut str: &str) -> Option<(String, &str)> {
@@ -148,8 +161,9 @@ fn demangle_function_args(mut str: &str) -> Option<(String, &str)> {
         if !result.is_empty() {
             result += ", ";
         }
-        let (arg, rest) = demangle_arg(str)?;
+        let (arg, arg_post, rest) = demangle_arg(str)?;
         result += arg.as_str();
+        result += arg_post.as_str();
         str = rest;
         if str.starts_with('_') || str.starts_with(',') {
             break;
@@ -215,6 +229,9 @@ pub fn demangle(mut str: &str) -> Option<String> {
     let mut special = false;
     let mut cnst = false;
     let mut fn_name: String;
+    let mut return_type_pre = String::new();
+    let mut return_type_post = String::new();
+    let mut qualified = String::new();
     if str.starts_with("__") {
         special = true;
         str = &str[2..];
@@ -226,10 +243,13 @@ pub fn demangle(mut str: &str) -> Option<String> {
         fn_name = qualified;
         str = &rest[2..];
     }
-    let (class_name, mut qualified, rest) = demangle_qualified_class(str)?;
-    str = rest;
-    if special {
-        fn_name = demangle_special_function(fn_name.as_str(), class_name.as_str())?;
+    if !str.starts_with('F') {
+        let (class_name, qualified_class, rest) = demangle_qualified_class(str)?;
+        qualified = qualified_class;
+        str = rest;
+        if special {
+            fn_name = demangle_special_function(fn_name.as_str(), class_name.as_str())?;
+        }
     }
     if str.starts_with('C') {
         str = &str[1..];
@@ -243,8 +263,9 @@ pub fn demangle(mut str: &str) -> Option<String> {
     }
     if str.starts_with('_') {
         str = &str[1..];
-        let (ret, rest) = demangle_arg(str)?;
-        qualified = format!("{} {}", ret, qualified);
+        let (ret_pre, ret_post, rest) = demangle_arg(str)?;
+        return_type_pre = ret_pre;
+        return_type_post = ret_post;
         str = rest;
     }
     if !str.is_empty() {
@@ -254,7 +275,10 @@ pub fn demangle(mut str: &str) -> Option<String> {
         fn_name = format!("{} const", fn_name);
     }
     if !qualified.is_empty() {
-        return Some(format!("{}::{}", qualified, fn_name));
+        fn_name = format!("{}::{}", qualified, fn_name);
+    }
+    if !return_type_pre.is_empty() {
+        fn_name = format!("{} {}{}", return_type_pre, fn_name, return_type_post);
     }
     Some(fn_name)
 }
@@ -300,19 +324,19 @@ mod tests {
 
     #[test]
     fn test_demangle_arg() {
-        assert_eq!(demangle_arg("v"), Some(("void".to_string(), "")));
-        assert_eq!(demangle_arg("b"), Some(("bool".to_string(), "")));
+        assert_eq!(demangle_arg("v"), Some(("void".to_string(), "".to_string(), "")));
+        assert_eq!(demangle_arg("b"), Some(("bool".to_string(), "".to_string(), "")));
         assert_eq!(
             demangle_arg("RC9CVector3fUc"),
-            Some(("const CVector3f&".to_string(), "Uc"))
+            Some(("const CVector3f&".to_string(), "".to_string(), "Uc"))
         );
         assert_eq!(
             demangle_arg("Q24rstl14char_traits<w>,"),
-            Some(("rstl::char_traits<wchar_t>".to_string(), ","))
+            Some(("rstl::char_traits<wchar_t>".to_string(), "".to_string(), ","))
         );
         assert_eq!(
             demangle_arg("PFPCcPCc_v"),
-            Some(("void (*)(const char*, const char*)".to_string(), ""))
+            Some(("void (*".to_string(), ")(const char*, const char*)".to_string(), ""))
         )
     }
 
@@ -364,6 +388,22 @@ mod tests {
         assert_eq!(
             demangle("AddWidgetFnMap__10CGuiWidgetFiM10CGuiWidgetFPCvPvP15CGuiFunctionDefP18CGuiControllerInfo_i"),
             Some("CGuiWidget::AddWidgetFnMap(int, int (CGuiWidget::*)(CGuiFunctionDef*, CGuiControllerInfo*))".to_string())
+        );
+        assert_eq!(
+            demangle("BareFn__FPFPCcPv_v_v"),
+            Some("void BareFn(void (*)(const char*, void*))".to_string())
+        );
+        assert_eq!(
+            demangle("BareFn__FPFPCcPv_v_PFPCvPv_v"),
+            Some("void (* BareFn(void (*)(const char*, void*)))(const void*, void*)".to_string())
+        );
+        assert_eq!(
+            demangle("SomeFn__FRCPFPFPCvPv_v_RCPFPCvPv_v"),
+            Some("SomeFn(void (*const & (*const &)(void (*)(const void*, void*)))(const void*, void*))".to_string())
+        );
+        assert_eq!(
+            demangle("SomeFn__Q29Namespace5ClassCFRCMQ29Namespace5ClassFPCvPCvMQ29Namespace5ClassFPCvPCvPCvPv_v_RCMQ29Namespace5ClassFPCvPCvPCvPv_v"),
+            Some("Namespace::Class::SomeFn(void (Namespace::Class::*const & (Namespace::Class::*const &)(void (Namespace::Class::*)(const void*, void*) const) const)(const void*, void*) const) const".to_string())
         );
     }
 }
