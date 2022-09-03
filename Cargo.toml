@@ -1,0 +1,15 @@
+[package]
+name = "cwdemangle"
+version = "0.1.0"
+edition = "2021"
+authors = ["Luke Street <luke@street.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/encounter/cwdemangle"
+readme = "README.md"
+description = """
+CodeWarrior C++ symbol demangler
+"""
+categories = ["command-line-utilities"]
+
+[dependencies]
+argh = "0.1.8"
