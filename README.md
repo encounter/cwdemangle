@@ -3,7 +3,7 @@
 [Build Status]: https://github.com/encounter/cwdemangle/workflows/build/badge.svg
 [actions]: https://github.com/encounter/cwdemangle/actions
 
-CodeWarrior C++ symbol demangler.
+CodeWarrior C++ symbol demangler
 
 ### Usage
 
