@@ -1,5 +1,4 @@
 use argh::FromArgs;
-
 use cwdemangle::demangle;
 
 #[derive(FromArgs)]

@@ -287,7 +287,11 @@ pub fn demangle(mut str: &str) -> Option<String> {
     if str.starts_with('F') {
         str = &str[1..];
         let (args, rest) = demangle_function_args(str)?;
-        fn_name = format!("{}({})", fn_name, args);
+        if args == "void" {
+            fn_name = format!("{}()", fn_name);
+        } else {
+            fn_name = format!("{}({})", fn_name, args);
+        }
         str = rest;
     }
     if str.starts_with('_') {
@@ -404,10 +408,10 @@ mod tests {
     #[test]
     fn test_demangle() {
         assert_eq!(demangle("cfunction"), None);
-        assert_eq!(demangle("__dt__6CActorFv"), Some("CActor::~CActor(void)".to_string()));
+        assert_eq!(demangle("__dt__6CActorFv"), Some("CActor::~CActor()".to_string()));
         assert_eq!(
             demangle("GetSfxHandle__6CActorCFv"),
-            Some("CActor::GetSfxHandle(void) const".to_string())
+            Some("CActor::GetSfxHandle() const".to_string())
         );
         assert_eq!(
             demangle("mNull__Q24rstl66basic_string<w,Q24rstl14char_traits<w>,Q24rstl17rmemory_allocator>"),
@@ -464,13 +468,15 @@ mod tests {
         assert_eq!(
             demangle("__opb__33TFunctor2<CP15CGuiSliderGroup,Cf>CFv"),
             Some(
-                "TFunctor2<const CGuiSliderGroup*, const float>::operator bool(void) const"
-                    .to_string()
+                "TFunctor2<const CGuiSliderGroup*, const float>::operator bool() const".to_string()
             )
         );
         assert_eq!(
             demangle("__opRC25TToken<15CCharLayoutInfo>__31TLockedToken<15CCharLayoutInfo>CFv"),
-            Some("TLockedToken<CCharLayoutInfo>::operator const TToken<CCharLayoutInfo>&(void) const".to_string())
+            Some(
+                "TLockedToken<CCharLayoutInfo>::operator const TToken<CCharLayoutInfo>&() const"
+                    .to_string()
+            )
         );
         assert_eq!(
             demangle("uninitialized_copy<Q24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>,PQ224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo>__4rstlFQ24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>Q24rstl198pointer_iterator<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl89vector<Q224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>PQ224CSpawnSystemKeyframeData24CSpawnSystemKeyframeInfo"),
@@ -478,7 +484,7 @@ mod tests {
         );
         assert_eq!(
             demangle("__rf__Q34rstl120list<Q24rstl78pair<i,PFRC10SObjectTagR12CInputStreamRC15CVParamTransfer_C16CFactoryFnReturn>,Q24rstl17rmemory_allocator>14const_iteratorCFv"),
-            Some("rstl::list<rstl::pair<int, const CFactoryFnReturn (*)(const SObjectTag&, CInputStream&, const CVParamTransfer&)>, rstl::rmemory_allocator>::const_iterator::operator->(void) const".to_string())
+            Some("rstl::list<rstl::pair<int, const CFactoryFnReturn (*)(const SObjectTag&, CInputStream&, const CVParamTransfer&)>, rstl::rmemory_allocator>::const_iterator::operator->() const".to_string())
         );
         assert_eq!(
             demangle("ApplyRipples__FRC14CRippleManagerRA43_A43_Q220CFluidPlaneCPURender13SHFieldSampleRA22_A22_UcRA256_CfRQ220CFluidPlaneCPURender10SPatchInfo"),
@@ -516,7 +522,7 @@ mod tests {
         );
         assert_eq!(
             demangle("__dt__26__partial_array_destructorFv"),
-            Some("__partial_array_destructor::~__partial_array_destructor(void)".to_string())
+            Some("__partial_array_destructor::~__partial_array_destructor()".to_string())
         );
         assert_eq!(
             demangle("__distance<Q34rstl195red_black_tree<13TGameScriptId,Q24rstl32pair<13TGameScriptId,9TUniqueId>,1,Q24rstl52select1st<Q24rstl32pair<13TGameScriptId,9TUniqueId>>,Q24rstl21less<13TGameScriptId>,Q24rstl17rmemory_allocator>14const_iterator>__4rstlFQ34rstl195red_black_tree<13TGameScriptId,Q24rstl32pair<13TGameScriptId,9TUniqueId>,1,Q24rstl52select1st<Q24rstl32pair<13TGameScriptId,9TUniqueId>>,Q24rstl21less<13TGameScriptId>,Q24rstl17rmemory_allocator>14const_iteratorQ34rstl195red_black_tree<13TGameScriptId,Q24rstl32pair<13TGameScriptId,9TUniqueId>,1,Q24rstl52select1st<Q24rstl32pair<13TGameScriptId,9TUniqueId>>,Q24rstl21less<13TGameScriptId>,Q24rstl17rmemory_allocator>14const_iteratorQ24rstl20forward_iterator_tag"),
