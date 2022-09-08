@@ -1,7 +1,12 @@
-# cwdemangle [![Build Status]][actions]
+# cwdemangle [![Build Status]][actions] [![Latest Version]][crates.io] [![Api Rustdoc]][rustdoc] ![Rust Version]
 
 [Build Status]: https://github.com/encounter/cwdemangle/actions/workflows/build.yaml/badge.svg
 [actions]: https://github.com/encounter/cwdemangle/actions
+[Latest Version]: https://img.shields.io/crates/v/cwdemangle.svg
+[crates.io]: https://crates.io/crates/cwdemangle
+[Api Rustdoc]: https://img.shields.io/badge/api-rustdoc-blue.svg
+[rustdoc]: https://docs.rs/cwdemangle
+[Rust Version]: https://img.shields.io/badge/rust-1.51+-blue.svg?maxAge=3600
 
 A CodeWarrior C++ symbol demangler.
 
