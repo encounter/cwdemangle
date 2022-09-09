@@ -29,6 +29,9 @@ fn parse_digits(str: &str) -> Option<(usize, &str)> {
 fn demangle_template_args(mut str: &str) -> Option<(&str, String)> {
     let tmpl_args = if let Some(start_idx) = str.find('<') {
         let end_idx = str.rfind('>')?;
+        if end_idx < start_idx {
+            return None;
+        }
         let mut args = &str[start_idx + 1..end_idx];
         str = &str[..start_idx];
         let mut tmpl_args = "<".to_string();
@@ -58,12 +61,18 @@ fn demangle_name(str: &str) -> Option<(String, String, &str)> {
         let out = format!("{}", size);
         return Some((out.clone(), out, rest));
     }
+    if rest.len() < size {
+        return None;
+    }
     let (name, args) = demangle_template_args(&rest[..size])?;
     Some((name.to_string(), format!("{}{}", name, args), &rest[size..]))
 }
 
 fn demangle_qualified_name(mut str: &str) -> Option<(String, String, &str)> {
     if str.starts_with('Q') {
+        if str.len() < 3 {
+            return None;
+        }
         let count = usize::from_str(&str[1..2]).ok()?;
         str = &str[2..];
         let mut last_class = String::new();
@@ -146,7 +155,7 @@ fn demangle_arg(mut str: &str) -> Option<(String, String, &str)> {
         let ret_post = format!("[{}]{}", count, arg_post);
         return Some((result, ret_post, rest));
     }
-    result.push_str(match str.chars().next().unwrap() {
+    result.push_str(match str.chars().next()? {
         'i' => "int",
         'b' => "bool",
         'c' => "char",
@@ -242,6 +251,10 @@ fn demangle_special_function(str: &str, class_name: &str) -> Option<String> {
 }
 
 pub fn demangle(mut str: &str) -> Option<String> {
+    if !str.is_ascii() {
+        return None;
+    }
+
     let mut special = false;
     let mut cnst = false;
     let mut fn_name: String;
@@ -586,6 +599,11 @@ mod tests {
             Some(
                 "nw4r::g3d::GetAnmPlayPolicy(nw4r::g3d::AnmPolicy)::policyTable guard".to_string()
             )
+        );
+        // Truncated symbol
+        assert_eq!(
+            demangle("lower_bound<Q24rstl180const_pointer_iterator<Q24rstl33pair<Ui,22CAdditiveAnimationInfo>,Q24rstl77vector<Q24rstl33pair<Ui,22CAdditiveAnimationInfo>,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>,Ui,Q24rstl79pair_sorter_finder<Q24rstl33pair<Ui,22CAdditiveAnimationInfo>,Q24rstl8less<Ui>>>__4rstlFQ24rstl180const_pointer_iterator<Q24rstl33pair<Ui,22CAdditiveAnimationInfo>,Q24rstl77vector<Q24rstl33pair<Ui,22CAdditiveAnimationInfo>,Q24rstl17rmemory_allocator>,Q24rstl17rmemory_allocator>Q24rstl180const_p"),
+            None
         );
     }
 }
