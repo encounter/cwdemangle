@@ -248,6 +248,22 @@ pub fn demangle(mut str: &str) -> Option<String> {
     let mut return_type_pre = String::new();
     let mut return_type_post = String::new();
     let mut qualified = String::new();
+    let mut static_var = String::new();
+
+    // Handle new static function variables (Wii CW)
+    let guard = str.starts_with("@GUARD@");
+    if guard || str.starts_with("@LOCAL@") {
+        str = &str[7..];
+        let idx = str.rfind('@')?;
+        let (rest, var) = str.split_at(idx);
+        if guard {
+            static_var = format!("{} guard", &var[1..]);
+        } else {
+            static_var = var[1..].to_string();
+        }
+        str = rest;
+    }
+
     if str.starts_with("__") {
         special = true;
         str = &str[2..];
@@ -268,6 +284,24 @@ pub fn demangle(mut str: &str) -> Option<String> {
             let (name, args) = demangle_template_args(fn_name_out)?;
             fn_name = format!("{}{}", name, args);
         }
+
+        // Handle old static function variables (GC CW)
+        if let Some(first_idx) = fn_name.find('$') {
+            let second_idx = fn_name[first_idx + 1..].find('$')?;
+            let (var, rest) = fn_name.split_at(first_idx);
+            let (var_type, rest) = rest[1..].split_at(second_idx);
+            if !var_type.starts_with("localstatic") {
+                return None;
+            }
+            if var == "init" {
+                // Sadly, $localstatic doesn't provide the variable name in guard/init
+                static_var = format!("{} guard", var_type);
+            } else {
+                static_var = var.to_string();
+            }
+            fn_name = rest[1..].to_string();
+        }
+
         str = &rest[2..];
     }
     let mut class_name = String::new();
@@ -312,6 +346,9 @@ pub fn demangle(mut str: &str) -> Option<String> {
     }
     if !return_type_pre.is_empty() {
         fn_name = format!("{} {}{}", return_type_pre, fn_name, return_type_post);
+    }
+    if !static_var.is_empty() {
+        fn_name = format!("{}::{}", fn_name, static_var);
     }
     Some(fn_name)
 }
@@ -531,6 +568,24 @@ mod tests {
         assert_eq!(
             demangle("__ct__Q210Metrowerks683compressed_pair<RQ23std301allocator<Q33std276__tree_deleter<Q23std34pair<Ci,Q212petfurniture8Instance>,Q33std131__multimap_do_transform<i,Q212petfurniture8Instance,Q23std7less<i>,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>,0>13value_compare,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>>4node>,Q210Metrowerks337compressed_pair<Q210Metrowerks12number<Ul,1>,PQ33std276__tree_deleter<Q23std34pair<Ci,Q212petfurniture8Instance>,Q33std131__multimap_do_transform<i,Q212petfurniture8Instance,Q23std7less<i>,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>,0>13value_compare,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>>4node>>FRQ23std301allocator<Q33std276__tree_deleter<Q23std34pair<Ci,Q212petfurniture8Instance>,Q33std131__multimap_do_transform<i,Q212petfurniture8Instance,Q23std7less<i>,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>,0>13value_compare,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>>4node>Q210Metrowerks337compressed_pair<Q210Metrowerks12number<Ul,1>,PQ33std276__tree_deleter<Q23std34pair<Ci,Q212petfurniture8Instance>,Q33std131__multimap_do_transform<i,Q212petfurniture8Instance,Q23std7less<i>,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>,0>13value_compare,Q23std53allocator<Q23std34pair<Ci,Q212petfurniture8Instance>>>4node>"),
             Some("Metrowerks::compressed_pair<std::allocator<std::__tree_deleter<std::pair<const int, petfurniture::Instance>, std::__multimap_do_transform<int, petfurniture::Instance, std::less<int>, std::allocator<std::pair<const int, petfurniture::Instance>>, 0>::value_compare, std::allocator<std::pair<const int, petfurniture::Instance>>>::node>&, Metrowerks::compressed_pair<Metrowerks::number<unsigned long, 1>, std::__tree_deleter<std::pair<const int, petfurniture::Instance>, std::__multimap_do_transform<int, petfurniture::Instance, std::less<int>, std::allocator<std::pair<const int, petfurniture::Instance>>, 0>::value_compare, std::allocator<std::pair<const int, petfurniture::Instance>>>::node*>>::compressed_pair(std::allocator<std::__tree_deleter<std::pair<const int, petfurniture::Instance>, std::__multimap_do_transform<int, petfurniture::Instance, std::less<int>, std::allocator<std::pair<const int, petfurniture::Instance>>, 0>::value_compare, std::allocator<std::pair<const int, petfurniture::Instance>>>::node>&, Metrowerks::compressed_pair<Metrowerks::number<unsigned long, 1>, std::__tree_deleter<std::pair<const int, petfurniture::Instance>, std::__multimap_do_transform<int, petfurniture::Instance, std::less<int>, std::allocator<std::pair<const int, petfurniture::Instance>>, 0>::value_compare, std::allocator<std::pair<const int, petfurniture::Instance>>>::node*>)".to_string())
+        );
+        assert_eq!(
+            demangle("skBadString$localstatic3$GetNameByToken__31TTokenSet<18EScriptObjectState>CF18EScriptObjectState"),
+            Some("TTokenSet<EScriptObjectState>::GetNameByToken(EScriptObjectState) const::skBadString".to_string())
+        );
+        assert_eq!(
+            demangle("init$localstatic4$GetNameByToken__31TTokenSet<18EScriptObjectState>CF18EScriptObjectState"),
+            Some("TTokenSet<EScriptObjectState>::GetNameByToken(EScriptObjectState) const::localstatic4 guard".to_string())
+        );
+        assert_eq!(
+            demangle("@LOCAL@GetAnmPlayPolicy__Q24nw4r3g3dFQ34nw4r3g3d9AnmPolicy@policyTable"),
+            Some("nw4r::g3d::GetAnmPlayPolicy(nw4r::g3d::AnmPolicy)::policyTable".to_string())
+        );
+        assert_eq!(
+            demangle("@GUARD@GetAnmPlayPolicy__Q24nw4r3g3dFQ34nw4r3g3d9AnmPolicy@policyTable"),
+            Some(
+                "nw4r::g3d::GetAnmPlayPolicy(nw4r::g3d::AnmPolicy)::policyTable guard".to_string()
+            )
         );
     }
 }
