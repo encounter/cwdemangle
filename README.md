@@ -21,9 +21,9 @@ cwdemangle 'BuildLight__9CGuiLightCFv'
 Library:
 
 ```rust
-use cwdemangle::demangle;
+use cwdemangle::{demangle, DemangleOptions};
 
-if let Some(result) = demangle("BuildLight__9CGuiLightCFv") {
+if let Some(result) = demangle("BuildLight__9CGuiLightCFv", &DemangleOptions::default()) {
     println!("{}", result);
 } else {
     eprintln!("Couldn't demangle symbol (not a C++ symbol?)");
