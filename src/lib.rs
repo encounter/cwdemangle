@@ -201,6 +201,7 @@ fn demangle_arg<'a>(
         'w' => "wchar_t",
         'v' => "void",
         'e' => "...",
+        '_' => return Some((result, String::new(), rest)),
         _ => return None,
     });
     result += post.as_str();
@@ -677,6 +678,13 @@ mod tests {
         assert_eq!(
             demangle("test__FRCPCPCi", &options),
             Some("test(const int* const* const&)".to_string()),
+        );
+        assert_eq!(
+            demangle(
+                "__ct__Q34nw4r2ut14CharStrmReaderFMQ34nw4r2ut14CharStrmReaderFPCvPv_Us",
+                &options
+            ),
+            Some("nw4r::ut::CharStrmReader::CharStrmReader(unsigned short (nw4r::ut::CharStrmReader::*)())".to_string())
         );
     }
 
