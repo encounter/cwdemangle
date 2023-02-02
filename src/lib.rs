@@ -86,14 +86,14 @@ fn demangle_name<'a>(str: &'a str, options: &DemangleOptions) -> Option<(String,
     let (size, rest) = parse_digits(str)?;
     // hack for template argument constants
     if rest.is_empty() || rest.starts_with(',') {
-        let out = format!("{}", size);
+        let out = format!("{size}");
         return Some((out.clone(), out, rest));
     }
     if rest.len() < size {
         return None;
     }
     let (name, args) = demangle_template_args(&rest[..size], options)?;
-    Some((name.to_string(), format!("{}{}", name, args), &rest[size..]))
+    Some((name.to_string(), format!("{name}{args}"), &rest[size..]))
 }
 
 fn demangle_qualified_name<'a>(
@@ -142,7 +142,7 @@ fn demangle_arg<'a>(
     if str.starts_with('M') {
         is_member = true;
         let (_, member, rest) = demangle_qualified_name(&str[1..], options)?;
-        pre = format!("{}::*{}", member, pre);
+        pre = format!("{member}::*{pre}");
         if !rest.starts_with('F') {
             return None;
         }
@@ -162,7 +162,7 @@ fn demangle_arg<'a>(
             }
         } else if post.starts_with('*') {
             post = post[1..].trim_start().to_string();
-            pre = format!("*{}", pre);
+            pre = format!("*{pre}");
         } else {
             return None;
         }
@@ -172,8 +172,8 @@ fn demangle_arg<'a>(
         }
         let (ret_pre, ret_post, rest) = demangle_arg(&rest[1..], options)?;
         let const_str = if const_member { " const" } else { "" };
-        let res_pre = format!("{} ({}{}", ret_pre, pre, post);
-        let res_post = format!(")({}){}{}", args, const_str, ret_post);
+        let res_pre = format!("{ret_pre} ({pre}{post}");
+        let res_post = format!(")({args}){const_str}{ret_post}");
         return Some((res_pre, res_post, rest));
     }
     if let Some(rest) = str.strip_prefix('A') {
@@ -183,10 +183,10 @@ fn demangle_arg<'a>(
         }
         let (arg_pre, arg_post, rest) = demangle_arg(&rest[1..], options)?;
         if !post.is_empty() {
-            post = format!("({})", post);
+            post = format!("({post})");
         }
-        result = format!("{}{}{}", pre, arg_pre, post);
-        let ret_post = format!("[{}]{}", count, arg_post);
+        result = format!("{pre}{arg_pre}{post}");
+        let ret_post = format!("[{count}]{arg_post}");
         return Some((result, ret_post, rest));
     }
     result.push_str(match str.chars().next()? {
@@ -235,13 +235,13 @@ fn demangle_special_function(
 ) -> Option<String> {
     if let Some(rest) = str.strip_prefix("op") {
         let (arg_pre, arg_post, _) = demangle_arg(rest, options)?;
-        return Some(format!("operator {}{}", arg_pre, arg_post));
+        return Some(format!("operator {arg_pre}{arg_post}"));
     }
     let (op, args) = demangle_template_args(str, options)?;
     Some(format!(
         "{}{}",
         match op {
-            "dt" => return Some(format!("~{}{}", class_name, args)),
+            "dt" => return Some(format!("~{class_name}{args}")),
             "ct" => class_name,
             "nw" => "operator new",
             "nwa" => "operator new[]",
@@ -286,7 +286,7 @@ fn demangle_special_function(
             "cl" => "operator()",
             "vc" => "operator[]",
             "vt" => "__vtable",
-            _ => return Some(format!("__{}{}", op, args)),
+            _ => return Some(format!("__{op}{args}")),
         },
         args
     ))
@@ -337,7 +337,7 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
             }
         } else {
             let (name, args) = demangle_template_args(fn_name_out, options)?;
-            fn_name = format!("{}{}", name, args);
+            fn_name = format!("{name}{args}");
         }
 
         // Handle old static function variables (GC CW)
@@ -350,7 +350,7 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
             }
             if var == "init" {
                 // Sadly, $localstatic doesn't provide the variable name in guard/init
-                static_var = format!("{} guard", var_type);
+                static_var = format!("{var_type} guard");
             } else {
                 static_var = var.to_string();
             }
@@ -377,9 +377,9 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         str = &str[1..];
         let (args, rest) = demangle_function_args(str, options)?;
         if options.omit_empty_parameters && args == "void" {
-            fn_name = format!("{}()", fn_name);
+            fn_name = format!("{fn_name}()");
         } else {
-            fn_name = format!("{}({})", fn_name, args);
+            fn_name = format!("{fn_name}({args})");
         }
         str = rest;
     }
@@ -394,16 +394,16 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         return None;
     }
     if cnst {
-        fn_name = format!("{} const", fn_name);
+        fn_name = format!("{fn_name} const");
     }
     if !qualified.is_empty() {
-        fn_name = format!("{}::{}", qualified, fn_name);
+        fn_name = format!("{qualified}::{fn_name}");
     }
     if !return_type_pre.is_empty() {
-        fn_name = format!("{} {}{}", return_type_pre, fn_name, return_type_post);
+        fn_name = format!("{return_type_pre} {fn_name}{return_type_post}");
     }
     if !static_var.is_empty() {
-        fn_name = format!("{}::{}", fn_name, static_var);
+        fn_name = format!("{fn_name}::{static_var}");
     }
     Some(fn_name)
 }

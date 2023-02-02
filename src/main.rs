@@ -21,7 +21,7 @@ fn main() -> Result<(), &'static str> {
     return if let Some(symbol) =
         demangle(args.symbol.as_str(), &DemangleOptions { omit_empty_parameters: !args.keep_void })
     {
-        println!("{}", symbol);
+        println!("{symbol}");
         Ok(())
     } else {
         Err("Failed to demangle symbol")

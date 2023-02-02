@@ -10,6 +10,7 @@ description = """
 CodeWarrior C++ symbol demangler
 """
 categories = ["command-line-utilities"]
+rust-version = "1.58"
 
 [dependencies]
 argh = "0.1.8"
