@@ -324,7 +324,11 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         str = &str[2..];
     }
     {
-        let idx = str.find("__")?;
+        let mut idx = str.find("__")?;
+        // Handle any trailing underscores in the function name
+        while str.chars().nth(idx + 2) == Some('_') {
+            idx += 1;
+        }
         let (fn_name_out, mut rest) = str.split_at(idx);
         if special {
             if fn_name_out == "init" {
@@ -685,6 +689,10 @@ mod tests {
                 &options
             ),
             Some("nw4r::ut::CharStrmReader::CharStrmReader(unsigned short (nw4r::ut::CharStrmReader::*)())".to_string())
+        );
+        assert_eq!(
+            demangle("QuerySymbolToMapFile___Q24nw4r2dbFPUcPC12OSModuleInfoUlPUcUl", &options),
+            Some("nw4r::db::QuerySymbolToMapFile_(unsigned char*, const OSModuleInfo*, unsigned long, unsigned char*, unsigned long)".to_string())
         );
     }
 
