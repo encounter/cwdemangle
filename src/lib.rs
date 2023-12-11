@@ -127,6 +127,12 @@ fn demangle_arg<'a>(
     mut str: &'a str,
     options: &DemangleOptions,
 ) -> Option<(String, String, &'a str)> {
+    // Negative constant
+    if let Some(str) = str.strip_prefix('-') {
+        let (size, rest) = parse_digits(str)?;
+        let out = format!("-{size}");
+        return Some((out.clone(), String::new(), rest));
+    }
     let mut result = String::new();
     let (mut pre, mut post, rest) = parse_qualifiers(str);
     result += pre.as_str();
@@ -693,6 +699,10 @@ mod tests {
         assert_eq!(
             demangle("QuerySymbolToMapFile___Q24nw4r2dbFPUcPC12OSModuleInfoUlPUcUl", &options),
             Some("nw4r::db::QuerySymbolToMapFile_(unsigned char*, const OSModuleInfo*, unsigned long, unsigned char*, unsigned long)".to_string())
+        );
+        assert_eq!(
+            demangle("__ct__Q37JGadget27TLinkList<10JUTConsole,-24>8iteratorFQ37JGadget13TNodeLinkList8iterator", &options),
+            Some("JGadget::TLinkList<JUTConsole, -24>::iterator::iterator(JGadget::TNodeLinkList::iterator)".to_string())
         );
     }
 
