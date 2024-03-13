@@ -16,4 +16,4 @@ path = "src/main.rs"
 
 [dependencies]
 argh = "0.1.12"
-cwdemangle = { path = "../lib" }
+cwdemangle = { path = "../lib", version = "1.0.0" }
