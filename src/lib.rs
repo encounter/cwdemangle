@@ -3,10 +3,14 @@ use std::str::FromStr;
 pub struct DemangleOptions {
     /// Replace `(void)` function parameters with `()`
     pub omit_empty_parameters: bool,
+    /// Enable Metrowerks extension types (`__int128`, `__vec2x32float__`, etc.)
+    /// Disabled by default since they conflict with template argument literals
+    /// and can't always be demangled correctly.
+    pub mw_extensions: bool,
 }
 
 impl Default for DemangleOptions {
-    fn default() -> Self { DemangleOptions { omit_empty_parameters: true } }
+    fn default() -> Self { DemangleOptions { omit_empty_parameters: true, mw_extensions: false } }
 }
 
 fn parse_qualifiers(mut str: &str) -> (String, String, &str) {
@@ -84,11 +88,6 @@ fn demangle_template_args<'a>(
 
 fn demangle_name<'a>(str: &'a str, options: &DemangleOptions) -> Option<(String, String, &'a str)> {
     let (size, rest) = parse_digits(str)?;
-    // hack for template argument constants
-    if rest.is_empty() || rest.starts_with(',') {
-        let out = format!("{size}");
-        return Some((out.clone(), out, rest));
-    }
     if rest.len() < size {
         return None;
     }
@@ -137,7 +136,34 @@ fn demangle_arg<'a>(
     let (mut pre, mut post, rest) = parse_qualifiers(str);
     result += pre.as_str();
     str = rest;
-    if str.starts_with('Q') || str.starts_with(|c: char| c.is_ascii_digit()) {
+    // Disambiguate arguments starting with a number
+    if str.starts_with(|c: char| c.is_ascii_digit()) {
+        let (num, rest) = parse_digits(str)?;
+        // If the number is followed by a comma or the end of the string, it's a template argument
+        if rest.is_empty() || rest.starts_with(',') {
+            // ...or a Metrowerks extension type
+            if options.mw_extensions {
+                if let Some(t) = match num {
+                    1 => Some("__int128"),
+                    2 => Some("__vec2x32float__"),
+                    _ => None,
+                } {
+                    result += t;
+                    return Some((result, post, rest));
+                }
+            }
+            result += &format!("{num}");
+            result += post.as_str();
+            return Some((result, String::new(), rest));
+        }
+        // Otherwise, it's (probably) the size of a type
+        let (_, qualified, rest) = demangle_name(str, options)?;
+        result += qualified.as_str();
+        result += post.as_str();
+        return Some((result, String::new(), rest));
+    }
+    // Handle qualified names
+    if str.starts_with('Q') {
         let (_, qualified, rest) = demangle_qualified_name(str, options)?;
         result += qualified.as_str();
         result += post.as_str();
@@ -207,6 +233,8 @@ fn demangle_arg<'a>(
         'w' => "wchar_t",
         'v' => "void",
         'e' => "...",
+        '1' if options.mw_extensions => "__int128",
+        '2' if options.mw_extensions => "__vec2x32float__",
         '_' => return Some((result, String::new(), rest)),
         _ => return None,
     });
@@ -330,7 +358,7 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         str = &str[2..];
     }
     {
-        let mut idx = str.find("__")?;
+        let mut idx = find_split(str, special, options)?;
         // Handle any trailing underscores in the function name
         while str.chars().nth(idx + 2) == Some('_') {
             idx += 1;
@@ -416,6 +444,31 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         fn_name = format!("{fn_name}::{static_var}");
     }
     Some(fn_name)
+}
+
+/// Finds the first double underscore in the string, excluding any that are part of a
+/// template argument list or operator name.
+fn find_split(s: &str, special: bool, options: &DemangleOptions) -> Option<usize> {
+    let mut start = 0;
+    if special && s.starts_with("op") {
+        let (_, _, rest) = demangle_arg(&s[2..], options)?;
+        start = s.len() - rest.len();
+    }
+    let mut depth = 0;
+    let bytes = s.as_bytes();
+    for i in start..s.len() {
+        match bytes[i] {
+            b'<' => depth += 1,
+            b'>' => depth -= 1,
+            b'_' => {
+                if bytes.get(i + 1).cloned() == Some(b'_') && depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -704,19 +757,40 @@ mod tests {
             demangle("__ct__Q37JGadget27TLinkList<10JUTConsole,-24>8iteratorFQ37JGadget13TNodeLinkList8iterator", &options),
             Some("JGadget::TLinkList<JUTConsole, -24>::iterator::iterator(JGadget::TNodeLinkList::iterator)".to_string())
         );
+        assert_eq!(
+            demangle("do_assign<Q23std126__convert_iterator<PP16GAM_eEngineState,Q33std68__cdeque<P16GAM_eEngineState,36ubiSTLAllocator<P16GAM_eEngineState>>8iterator>>__Q23std36__cdeque<PCv,20ubiSTLAllocator<PCv>>FQ23std126__convert_iterator<PP16GAM_eEngineState,Q33std68__cdeque<P16GAM_eEngineState,36ubiSTLAllocator<P16GAM_eEngineState>>8iterator>Q23std126__convert_iterator<PP16GAM_eEngineState,Q33std68__cdeque<P16GAM_eEngineState,36ubiSTLAllocator<P16GAM_eEngineState>>8iterator>Q23std20forward_iterator_tag", &options),
+            Some("std::__cdeque<const void*, ubiSTLAllocator<const void*>>::do_assign<std::__convert_iterator<GAM_eEngineState**, std::__cdeque<GAM_eEngineState*, ubiSTLAllocator<GAM_eEngineState*>>::iterator>>(std::__convert_iterator<GAM_eEngineState**, std::__cdeque<GAM_eEngineState*, ubiSTLAllocator<GAM_eEngineState*>>::iterator>, std::__convert_iterator<GAM_eEngineState**, std::__cdeque<GAM_eEngineState*, ubiSTLAllocator<GAM_eEngineState*>>::iterator>, std::forward_iterator_tag)".to_string())
+        );
+        assert_eq!(
+            demangle("__opPCQ23std15__locale_imp<1>__Q23std80_RefCountedPtr<Q23std15__locale_imp<1>,Q23std32_Single<Q23std15__locale_imp<1>>>CFv", &options),
+            Some("std::_RefCountedPtr<std::__locale_imp<1>, std::_Single<std::__locale_imp<1>>>::operator const std::__locale_imp<1>*() const".to_string())
+        );
+        assert_eq!(
+            demangle("__partition_const_ref<PP12CSpaceObject,Q23std74unary_negate<Q23std52__binder1st_const_ref<Q23std21less<P12CSpaceObject>>>>__3stdFPP12CSpaceObjectPP12CSpaceObjectRCQ23std74unary_negate<Q23std52__binder1st_const_ref<Q23std21less<P12CSpaceObject>>>", &options),
+            Some("std::__partition_const_ref<CSpaceObject**, std::unary_negate<std::__binder1st_const_ref<std::less<CSpaceObject*>>>>(CSpaceObject**, CSpaceObject**, const std::unary_negate<std::__binder1st_const_ref<std::less<CSpaceObject*>>>&)".to_string())
+        );
     }
 
     #[test]
     fn test_demangle_options() {
-        let options = DemangleOptions { omit_empty_parameters: true };
+        let options = DemangleOptions { omit_empty_parameters: true, mw_extensions: false };
         assert_eq!(
             demangle("__dt__26__partial_array_destructorFv", &options),
             Some("__partial_array_destructor::~__partial_array_destructor()".to_string())
         );
-        let options = DemangleOptions { omit_empty_parameters: false };
+        let options = DemangleOptions { omit_empty_parameters: false, mw_extensions: false };
         assert_eq!(
             demangle("__dt__26__partial_array_destructorFv", &options),
             Some("__partial_array_destructor::~__partial_array_destructor(void)".to_string())
+        );
+        let options = DemangleOptions { omit_empty_parameters: true, mw_extensions: true };
+        assert_eq!(
+            demangle("__opPCQ23std15__locale_imp<1>__Q23std80_RefCountedPtr<Q23std15__locale_imp<1>,Q23std32_Single<Q23std15__locale_imp<1>>>CFv", &options),
+            Some("std::_RefCountedPtr<std::__locale_imp<__int128>, std::_Single<std::__locale_imp<__int128>>>::operator const std::__locale_imp<__int128>*() const".to_string())
+        );
+        assert_eq!(
+            demangle("fn<3,PV2>__FPC2", &options),
+            Some("fn<3, volatile __vec2x32float__*>(const __vec2x32float__*)".to_string())
         );
     }
 }
