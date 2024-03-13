@@ -1,0 +1,19 @@
+[package]
+name = "cwdemangle-bin"
+version = "1.0.0"
+edition = "2021"
+authors = ["Luke Street <luke@street.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/encounter/cwdemangle"
+readme = "../README.md"
+description = "CodeWarrior C++ symbol demangler (binary)"
+categories = ["command-line-utilities"]
+rust-version = "1.58"
+
+[[bin]]
+name = "cwdemangle"
+path = "src/main.rs"
+
+[dependencies]
+argh = "0.1.12"
+cwdemangle = { path = "../lib" }

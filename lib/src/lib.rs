@@ -1,9 +1,28 @@
-use std::str::FromStr;
+//! A CodeWarrior C++ symbol demangler.
+//! 
+//! # Usage
+//! ```
+//! use cwdemangle::{demangle, DemangleOptions};
+//!
+//! let result = demangle("BuildLight__9CGuiLightCFv", &DemangleOptions::default());
+//! assert_eq!(result, Some("CGuiLight::BuildLight() const".to_string()));
+//! ```
+#![no_std]
 
+extern crate alloc;
+
+use alloc::{
+    format,
+    str::FromStr,
+    string::{String, ToString},
+};
+
+/// Options for [demangle].
 pub struct DemangleOptions {
     /// Replace `(void)` function parameters with `()`
     pub omit_empty_parameters: bool,
     /// Enable Metrowerks extension types (`__int128`, `__vec2x32float__`, etc.)
+    ///
     /// Disabled by default since they conflict with template argument literals
     /// and can't always be demangled correctly.
     pub mw_extensions: bool,
@@ -326,6 +345,9 @@ fn demangle_special_function(
     ))
 }
 
+/// Demangle a symbol name.
+///
+/// Returns `None` if the input is not a valid mangled name.
 pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
     if !str.is_ascii() {
         return None;

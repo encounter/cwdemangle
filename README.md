@@ -10,24 +10,37 @@
 
 A CodeWarrior C++ symbol demangler.
 
-### Usage
+## Usage
 
-CLI:
+### CLI
+
+Static binaries available from [releases](https://github.com/encounter/cwdemangle/releases) or install via `cargo install cwdemangle-bin`.
 
 ```shell
 cwdemangle 'BuildLight__9CGuiLightCFv'
 ```
 
-Library:
+Pass `--help` to see available options.
+
+### Library
+
+- No dependencies
+- `#![no_std]` compatible (requires `alloc`)
+
+Cargo.toml:
+
+```toml
+[dependencies]
+cwdemangle = "0.2"
+```
+
+Usage:
 
 ```rust
 use cwdemangle::{demangle, DemangleOptions};
 
-if let Some(result) = demangle("BuildLight__9CGuiLightCFv", &DemangleOptions::default()) {
-    println!("{}", result);
-} else {
-    eprintln!("Couldn't demangle symbol (not a C++ symbol?)");
-}
+let result = demangle("BuildLight__9CGuiLightCFv", &DemangleOptions::default());
+assert_eq!(result, Some("CGuiLight::BuildLight() const".to_string()));
 ```
 
 ### License
