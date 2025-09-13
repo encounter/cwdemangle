@@ -426,8 +426,8 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
         }
         let rest = &rest[1..];
         if let Some((_, rest2)) = parse_digits(rest) {
-            if rest2.starts_with('@') {
-                let fn_demangled = demangle(&rest2[1..], options)?;
+            if let Some(stripped) = rest2.strip_prefix('@') {
+                let fn_demangled = demangle(stripped, options)?;
                 thunk_res = Some(format!("virtual thunk to {fn_demangled}"));
             }
         }
