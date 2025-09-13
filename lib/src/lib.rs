@@ -1,5 +1,5 @@
 //! A CodeWarrior C++ symbol demangler.
-//! 
+//!
 //! # Usage
 //! ```
 //! use cwdemangle::{demangle, DemangleOptions};
@@ -50,6 +50,14 @@ fn parse_qualifiers(mut str: &str) -> (String, String, &str) {
                     post.insert(0, '&');
                 } else {
                     post.insert_str(0, format!("& {}", pre.trim_end()).as_str());
+                    pre.clear();
+                }
+            }
+            'O' => {
+                if pre.is_empty() {
+                    post.insert_str(0, "&&");
+                } else {
+                    post.insert_str(0, format!("&& {}", pre.trim_end()).as_str());
                     pre.clear();
                 }
             }
@@ -188,20 +196,27 @@ fn demangle_arg<'a>(
         result += post.as_str();
         return Some((result, String::new(), rest));
     }
-    let mut is_member = false;
+    let mut is_member_fn = false;
     let mut const_member = false;
     if str.starts_with('M') {
-        is_member = true;
-        let (_, member, rest) = demangle_qualified_name(&str[1..], options)?;
+        let (_, member, rest0) = demangle_qualified_name(&str[1..], options)?;
         pre = format!("{member}::*{pre}");
-        if !rest.starts_with('F') {
-            return None;
+        str = rest0;
+        if str.starts_with('F') {
+            is_member_fn = true;
+        } else {
+            let (arg_pre, arg_post, rest) = demangle_arg(str, options)?;
+            let res = if post.is_empty() {
+                format!("{arg_pre}{arg_post} {pre}")
+            } else {
+                format!("{arg_pre}{arg_post} ({pre}){post}")
+            };
+            return Some((res.trim_end().to_string(), String::new(), rest));
         }
-        str = rest;
     }
-    if is_member || str.starts_with('F') {
+    if is_member_fn || str.starts_with('F') {
         str = &str[1..];
-        if is_member {
+        if is_member_fn {
             // "const void*, const void*" or "const void*, void*"
             if str.starts_with("PCvPCv") {
                 const_member = true;
@@ -249,6 +264,7 @@ fn demangle_arg<'a>(
         'x' => "long long",
         'f' => "float",
         'd' => "double",
+        'r' => "long double",
         'w' => "wchar_t",
         'v' => "void",
         'e' => "...",
@@ -362,17 +378,77 @@ pub fn demangle(mut str: &str, options: &DemangleOptions) -> Option<String> {
     let mut static_var = String::new();
 
     // Handle new static function variables (Wii CW)
-    let guard = str.starts_with("@GUARD@");
-    if guard || str.starts_with("@LOCAL@") {
-        str = &str[7..];
-        let idx = str.rfind('@')?;
-        let (rest, var) = str.split_at(idx);
-        if guard {
-            static_var = format!("{} guard", &var[1..]);
-        } else {
-            static_var = var[1..].to_string();
+    if str.starts_with("@STRING@") {
+        str = &str[8..];
+        // Optional trailing @number
+        if let Some(idx) = str.rfind('@') {
+            if str[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
+                static_var = format!("string literal {}", &str[idx + 1..]);
+                str = &str[..idx];
+            }
         }
-        str = rest;
+        if static_var.is_empty() {
+            static_var = "string literal".to_string();
+        }
+        if let Some(idx) = str.rfind("__") {
+            if str[..idx].contains("@@") {
+                str = &str[..idx];
+            }
+        }
+    } else {
+        let guard = str.starts_with("@GUARD@");
+        if guard || str.starts_with("@LOCAL@") {
+            str = &str[7..];
+            let last = str.rfind('@')?;
+            let (rest, var) = str.split_at(last);
+            let mut var_name = &var[1..];
+            if var_name.chars().all(|c| c.is_ascii_digit()) {
+                let prev = rest.rfind('@')?;
+                var_name = &rest[prev + 1..];
+                str = &rest[..prev];
+            } else {
+                str = rest;
+            }
+            if guard {
+                static_var = format!("{var_name} guard");
+            } else {
+                static_var = var_name.to_string();
+            }
+        }
+    }
+
+    // Thunks and covariant return thunks
+    let mut thunk_res = None;
+    if let Some(rest) = str.strip_prefix('@') {
+        let (_, rest) = parse_digits(rest)?;
+        if !rest.starts_with('@') {
+            return None;
+        }
+        let rest = &rest[1..];
+        if let Some((_, rest2)) = parse_digits(rest) {
+            if rest2.starts_with('@') {
+                let fn_demangled = demangle(&rest2[1..], options)?;
+                thunk_res = Some(format!("virtual thunk to {fn_demangled}"));
+            }
+        }
+        if thunk_res.is_none() {
+            if let Some(idx) = rest.find("@@") {
+                let fn_demangled = demangle(&rest[..idx], options)?;
+                thunk_res = Some(format!("covariant return thunk to {fn_demangled}"));
+            } else {
+                let fn_demangled = demangle(rest, options)?;
+                thunk_res = Some(format!("non-virtual thunk to {fn_demangled}"));
+            }
+        }
+    } else if let Some(idx) = str.find("@@") {
+        let fn_demangled = demangle(&str[..idx], options)?;
+        thunk_res = Some(format!("covariant return thunk to {fn_demangled}"));
+    }
+    if let Some(mut s) = thunk_res {
+        if !static_var.is_empty() {
+            s = format!("{s}::{static_var}");
+        }
+        return Some(s);
     }
 
     if str.starts_with("__") {
@@ -478,19 +554,26 @@ fn find_split(s: &str, special: bool, options: &DemangleOptions) -> Option<usize
     }
     let mut depth = 0;
     let bytes = s.as_bytes();
+    let mut result = None;
     for i in start..s.len() {
         match bytes[i] {
             b'<' => depth += 1,
             b'>' => depth -= 1,
             b'_' => {
                 if bytes.get(i + 1).cloned() == Some(b'_') && depth == 0 {
-                    return Some(i);
+                    if let Some(&b) = bytes.get(i + 2) {
+                        if b == b'C' || b == b'F' || b == b'Q' || b.is_ascii_digit() {
+                            result = Some(i);
+                        }
+                    } else {
+                        result = Some(i);
+                    }
                 }
             }
             _ => {}
         }
     }
-    None
+    result
 }
 
 #[cfg(test)]
@@ -813,6 +896,79 @@ mod tests {
         assert_eq!(
             demangle("fn<3,PV2>__FPC2", &options),
             Some("fn<3, volatile __vec2x32float__*>(const __vec2x32float__*)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_issue4() {
+        let options = DemangleOptions::default();
+        assert_eq!(
+            demangle("@248@__dt__11SndAudioMgrFv", &options),
+            Some("non-virtual thunk to SndAudioMgr::~SndAudioMgr()".to_string())
+        );
+        assert_eq!(
+            demangle("@8@4@f__2C1Fv", &options),
+            Some("virtual thunk to C1::f()".to_string())
+        );
+        assert_eq!(demangle("ptm__FM3Clsi", &options), Some("ptm(int Cls::*)".to_string()));
+        assert_eq!(demangle("f__Fr", &options), Some("f(long double)".to_string()));
+        assert_eq!(
+            demangle("mDoExt_J3DModel__create__FP12J3DModelDataUlUl", &options),
+            Some(
+                "mDoExt_J3DModel__create(J3DModelData*, unsigned long, unsigned long)".to_string()
+            )
+        );
+        assert_eq!(
+            demangle("@LOCAL@drawQuad__20dDrawShadowProjMap_cFv@c_scale@3", &options),
+            Some("dDrawShadowProjMap_c::drawQuad()::c_scale".to_string())
+        );
+        assert_eq!(
+            demangle("@STRING@__ct__19MarioLauncherLayoutFv", &options),
+            Some("MarioLauncherLayout::MarioLauncherLayout()::string literal".to_string())
+        );
+        assert_eq!(
+            demangle("@STRING@init__19MarioLauncherLayoutFRC12JMapInfoIter@1", &options),
+            Some("MarioLauncherLayout::init(const JMapInfoIter&)::string literal 1".to_string())
+        );
+        assert_eq!(
+            demangle("@8@test__1TFv@@13MyTemplate<i>", &options),
+            Some("covariant return thunk to T::test()".to_string())
+        );
+        assert_eq!(
+            demangle("@4@test__14MyTemplate2<i>Fv@@14MyTemplate1<i>", &options),
+            Some("covariant return thunk to MyTemplate2<int>::test()".to_string())
+        );
+        assert_eq!(
+            demangle("@4@test__1TFv@@14MyTemplate2<i>", &options),
+            Some("covariant return thunk to T::test()".to_string())
+        );
+        assert_eq!(
+            demangle("@8@test__1TFM15MyTemplate1<Cc>FPCvPv_v@@15MyTemplate1<Cc>", &options),
+            Some(
+                "covariant return thunk to T::test(void (MyTemplate1<const char>::*)())"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            demangle("@STRING@test__1TFv@@15MyTemplate1<Cc>__1TFv", &options),
+            Some("covariant return thunk to T::test()::string literal".to_string())
+        );
+        assert_eq!(
+            demangle(
+                "@STRING@test__1TFM15MyTemplate1<Cc>FPCvPv_v@@15MyTemplate1<Cc>__1TFM15MyTemplate1<Cc>FPCvPv_v@0",
+                &options
+            ),
+            Some(
+                "covariant return thunk to T::test(void (MyTemplate1<const char>::*)())::string literal 0".to_string()
+            )
+        );
+        assert_eq!(demangle("test2__FOi", &options), Some("test2(int&&)".to_string()));
+        assert_eq!(
+            demangle("__opM5ClassFPCvPCv_M5ClassFPCvPCv_PA4_f__5ClassCFv", &options),
+            Some(
+                "Class::operator float(*) (Class::* (Class::*)() const)() const[4]() const"
+                    .to_string()
+            )
         );
     }
 }
