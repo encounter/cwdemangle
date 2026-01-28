@@ -45,15 +45,10 @@ assert_eq!(result, Some("CGuiLight::BuildLight() const".to_string()));
 
 ### License
 
-Licensed under either of
+This project is dedicated to the public domain under the Creative Commons CC0 1.0 Universal (CC0-1.0) Public Domain Dedication.
 
-* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-* MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
+See [LICENSE](LICENSE) for the full text.
 
 ### Contribution
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any
-additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you is contributed under CC0-1.0 as well.
