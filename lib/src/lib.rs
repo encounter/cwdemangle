@@ -252,6 +252,7 @@ fn demangle_arg<'a>(
         'w' => "wchar_t",
         'v' => "void",
         'e' => "...",
+        'r' => "long double",
         '1' if options.mw_extensions => "__int128",
         '2' if options.mw_extensions => "__vec2x32float__",
         '_' => return Some((result, String::new(), rest)),
@@ -594,6 +595,7 @@ mod tests {
         let options = DemangleOptions::default();
         assert_eq!(demangle_function_args("v", &options), Some(("void".to_string(), "")));
         assert_eq!(demangle_function_args("b", &options), Some(("bool".to_string(), "")));
+        assert_eq!(demangle_function_args("r", &options), Some(("long double".to_string(), "")));
         assert_eq!(
             demangle_function_args("RC9CVector3fUc_x", &options),
             Some(("const CVector3f&, unsigned char".to_string(), "_x"))
